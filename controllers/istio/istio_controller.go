@@ -16,8 +16,10 @@ package istio
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"reflect"
 	"strings"
 	"time"
@@ -132,9 +134,11 @@ func (r *Reconciler) reconcileActiveRevision(ctx context.Context, istio *v1.Isti
 	if err != nil {
 		return err
 	}
+	rev := getActiveRevisionName(istio)
+	values.Revision = &rev
 
 	return revision.CreateOrUpdate(ctx, r.Client,
-		getActiveRevisionName(istio),
+		rev,
 		version, istio.Spec.Namespace, values,
 		metav1.OwnerReference{
 			APIVersion:         v1.GroupVersion.String(),
@@ -173,6 +177,16 @@ func GetActiveRevisionKey(istio *v1.Istio) types.NamespacedName {
 	}
 }
 
+func computeValuesHash(values interface{}) (string, error) {
+	hasher := fnv.New32a()
+	printer, err := json.Marshal(values)
+	if err != nil {
+		return "", err
+	}
+	hasher.Write(printer)
+	return fmt.Sprintf("%x", hasher.Sum32()), nil
+}
+
 func getActiveRevisionName(istio *v1.Istio) string {
 	var strategy v1.UpdateStrategyType
 	if istio.Spec.UpdateStrategy != nil {
@@ -185,7 +199,11 @@ func getActiveRevisionName(istio *v1.Istio) string {
 	case v1.UpdateStrategyTypeInPlace:
 		return istio.Name
 	case v1.UpdateStrategyTypeRevisionBased:
-		return istio.Name + "-" + strings.ReplaceAll(istio.Spec.Version, ".", "-")
+		hash, err := computeValuesHash(istio.Spec.Values)
+		if err != nil {
+			return istio.Name + "-" + strings.ReplaceAll(istio.Spec.Version, ".", "-")
+		}
+		return istio.Name + "-" + strings.ReplaceAll(istio.Spec.Version, ".", "-") + "-" + hash
 	}
 }
 
