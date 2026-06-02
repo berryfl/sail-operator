@@ -1,0 +1,33 @@
+variables:
+  IMAGE_VERSION: "master"
+  STAGE_IMAGE: asia.gcr.io/airwallex/gitlab-cicd:$IMAGE_VERSION
+
+stages:
+  - build and publish
+
+build-and-publish-docker-image:
+  stage: build and publish
+  variables:
+    HUB: asia.gcr.io/airwallex
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_HOST: tcp://localhost:2375
+    DOCKER_DRIVER: overlay2
+    KUBERNETES_CPU_REQUEST: 2
+    KUBERNETES_CPU_LIMIT: 2
+    KUBERNETES_MEMORY_REQUEST: 2Gi
+    KUBERNETES_MEMORY_LIMIT: 2Gi
+    BUILD_WITH_CONTAINER: 0
+  image: $STAGE_IMAGE
+  services:
+    - name: docker:20.10.17-dind
+      command: ["--tls=false", "--host=tcp://0.0.0.0:2375"]
+  before_script:
+    # workaround to support higher docker version because of the known issue - https://gitlab.com/gitlab-org/gitlab-runner/-/issues/27215
+    - until docker info; do sleep 1; done
+  script:
+    - unset SSH_PRIVATE_KEY_TO_BE_DELETED
+    - wget https://go.dev/dl/go1.25.10.linux-amd64.tar.gz
+    - tar -C /opt -xzf go1.25.10.linux-amd64.tar.gz
+    - echo 'export PATH=$PATH:/opt/go/bin' >> ~/.bashrc
+    - source ~/.bashrc
+    - make docker-push
